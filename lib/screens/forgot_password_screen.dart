@@ -39,7 +39,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(authProvider.errorMessage ?? 'Failed to send OTP')),
+        SnackBar(
+            content: Text(authProvider.errorMessage ?? 'Failed to send OTP')),
       );
     }
   }

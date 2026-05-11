@@ -72,12 +72,11 @@ class _HomeScreenState extends State<HomeScreen>
     _fetchData();
   }
 
-
   Future<void> _fetchData() async {
     final user = Provider.of<AuthProvider>(context, listen: false).user;
     if (user != null) {
       context.read<HealthProvider>().fetchHistory(user.id);
-      
+
       // Still fetch health status via AuthProvider as it's separate
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.syncUserWithServer().then((_) async {
@@ -111,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen>
     final healthProvider = Provider.of<HealthProvider>(context);
     final latestRecord = healthProvider.latestRecord;
     final isLoading = healthProvider.isLoading;
-    
+
     // Sync heartbeat animation
     _updateHeartbeatAnimation(latestRecord);
 
@@ -246,9 +245,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildStreakBadge({required bool isBreathing}) {
     final user = Provider.of<AuthProvider>(context).user;
-    final streak = isBreathing
-        ? (user?.breathingStreak ?? 0)
-        : (user?.scanStreak ?? 0);
+    final streak =
+        isBreathing ? (user?.breathingStreak ?? 0) : (user?.scanStreak ?? 0);
 
     if (streak == 0) return const SizedBox.shrink();
 
@@ -400,8 +398,7 @@ class _HomeScreenState extends State<HomeScreen>
             animation: _heartScaleAnimation,
             builder: (context, child) {
               return Transform.scale(
-                scale:
-                    _heartScaleAnimation.value *
+                scale: _heartScaleAnimation.value *
                     2.0, // Multiplier to force the image to display much larger
                 child: Image.asset(
                   'assets/images/glowing_heart.png',
@@ -524,41 +521,59 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildStatCards(BpmRecord? latestRecord) {
-    String bp = '--/--';
-    if (latestRecord?.systolic != null && latestRecord?.diastolic != null) {
-      bp = '${latestRecord!.systolic}/${latestRecord!.diastolic}';
+    final history = Provider.of<HealthProvider>(context, listen: false).history;
+
+    // Calculate BP Min/Max
+    String bpMin = '--/--';
+    String bpMax = '--/--';
+    if (history.isNotEmpty) {
+      final validSystolic =
+          history.map((e) => e.systolic ?? 0).where((e) => e > 0).toList();
+      final validDiastolic =
+          history.map((e) => e.diastolic ?? 0).where((e) => e > 0).toList();
+
+      if (validSystolic.isNotEmpty && validDiastolic.isNotEmpty) {
+        bpMin =
+            '${validSystolic.reduce(math.min)}/${validDiastolic.reduce(math.min)}';
+        bpMax =
+            '${validSystolic.reduce(math.max)}/${validDiastolic.reduce(math.max)}';
+      }
     }
 
-    String oxygen = latestRecord?.spo2 != null ? '${latestRecord!.spo2}%' : '--%';
-    
-    // Calculate rough calories based on scans or average heart rate if available
-    int calories = 0;
-    if (_healthStatus != null && _healthStatus!['totalScans'] != null) {
-      calories = (_healthStatus!['totalScans'] as int) * 15; // 15 kcal per scan session roughly
-    } else if (latestRecord != null && latestRecord.bpm > 0) {
-      calories = (latestRecord.bpm * 0.5).round(); // Simple mock based on heart rate
+    String oxygenRange = '--%';
+    if (history.isNotEmpty) {
+      final validSpo2 = history
+          .map((e) => e.spo2 ?? 0)
+          .where((e) => e > 0)
+          .toList();
+      if (validSpo2.isNotEmpty) {
+        int min = validSpo2.reduce(math.min);
+        int max = validSpo2.reduce(math.max);
+        // If min and max are the same, show it as a single value with %
+        // Otherwise show the range with % as requested
+        oxygenRange = min == max ? '$min%' : '$min% to $max%';
+      }
+    }
+
+    String latestBp = '120/80';
+    if (latestRecord?.systolic != null && latestRecord?.diastolic != null) {
+      latestBp = '${latestRecord!.systolic}/${latestRecord!.diastolic}';
     }
 
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         _buildSmallCard(
           Icons.favorite,
           AppTheme.primaryRed,
-          bp,
-          'Blood Pressure\nmmHg',
+          latestBp,
+          'Blood Pressure\n(Systolic/Diastolic)',
         ),
+        const SizedBox(width: 12),
         _buildSmallCard(
           Icons.water_drop,
           Colors.blueAccent,
-          oxygen,
-          'Oxygen Level\nSpO2',
-        ),
-        _buildSmallCard(
-          Icons.local_fire_department,
-          Colors.orangeAccent,
-          calories > 0 ? '$calories' : '--',
-          'Calories Burn\nkcal',
+          oxygenRange,
+          'Oxygen Level Range\n(Min to Max) SpO2',
         ),
       ],
     );
@@ -633,8 +648,7 @@ class _HomeScreenState extends State<HomeScreen>
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () {
-            final oldStreak =
-                Provider.of<AuthProvider>(
+            final oldStreak = Provider.of<AuthProvider>(
                   context,
                   listen: false,
                 ).user?.scanStreak ??
@@ -668,8 +682,7 @@ class _HomeScreenState extends State<HomeScreen>
               }
               widget.onScanComplete?.call(); // Trigger global refresh if needed
               if (!mounted) return;
-              final newStreak =
-                  Provider.of<AuthProvider>(
+              final newStreak = Provider.of<AuthProvider>(
                     context,
                     listen: false,
                   ).user?.scanStreak ??
@@ -890,8 +903,7 @@ class _HomeScreenState extends State<HomeScreen>
             label: 'Breathe',
             color: Colors.tealAccent,
             onTap: () {
-              final oldStreak =
-                  Provider.of<AuthProvider>(
+              final oldStreak = Provider.of<AuthProvider>(
                     context,
                     listen: false,
                   ).user?.breathingStreak ??
@@ -904,8 +916,7 @@ class _HomeScreenState extends State<HomeScreen>
               ).then((_) async {
                 await _fetchData();
                 if (!mounted) return;
-                final newStreak =
-                    Provider.of<AuthProvider>(
+                final newStreak = Provider.of<AuthProvider>(
                       context,
                       listen: false,
                     ).user?.breathingStreak ??
@@ -968,26 +979,27 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildDailyGoalsCard(List<BpmRecord> history) {
     final user = Provider.of<AuthProvider>(context).user;
-    
+
     // Count real scans from history for today
     final now = DateTime.now();
-    final todayScans = history.where((r) => 
-      r.timestamp.year == now.year && 
-      r.timestamp.month == now.month && 
-      r.timestamp.day == now.day
-    ).length;
+    final todayScans = history
+        .where((r) =>
+            r.timestamp.year == now.year &&
+            r.timestamp.month == now.month &&
+            r.timestamp.day == now.day)
+        .length;
 
     final progress = _healthStatus?['progress'] ?? {};
     final breathingMinutes = progress['breathingMinutes'] ?? 0;
-    
-    final goals = user?.healthGoals ?? HealthGoals(
-      minBpm: 60, 
-      maxBpm: 90, 
-      dailyScanGoal: 3, 
-      dailyBreathingGoal: 5, 
-      weeklyBpmTarget: 85
-    );
-    
+
+    final goals = user?.healthGoals ??
+        HealthGoals(
+            minBpm: 60,
+            maxBpm: 90,
+            dailyScanGoal: 3,
+            dailyBreathingGoal: 5,
+            weeklyBpmTarget: 85);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -1004,7 +1016,10 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               const Text(
                 'Daily Progress',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold),
               ),
               Icon(Icons.stars, color: Colors.amber.withOpacity(0.8), size: 20),
             ],
@@ -1031,7 +1046,9 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildGoalProgress(String label, int current, int goal, Color color, IconData icon, {String? unit}) {
+  Widget _buildGoalProgress(
+      String label, int current, int goal, Color color, IconData icon,
+      {String? unit}) {
     double percent = goal > 0 ? (current / goal).clamp(0.0, 1.0) : 0.0;
     return Column(
       children: [
@@ -1039,11 +1056,15 @@ class _HomeScreenState extends State<HomeScreen>
           children: [
             Icon(icon, color: color, size: 16),
             const SizedBox(width: 8),
-            Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+            Text(label,
+                style: const TextStyle(color: Colors.grey, fontSize: 13)),
             const Spacer(),
             Text(
               '$current/$goal${unit != null ? ' $unit' : ''}',
-              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold),
             ),
           ],
         ),

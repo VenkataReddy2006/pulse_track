@@ -14,42 +14,60 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late AnimationController _ecgController;
-  late AnimationController _contentController;
-  late Animation<double> _heartScale;
-  late Animation<double> _contentOpacity;
+class _SplashScreenState extends State<SplashScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _mainController;
+  late AnimationController _tiltController;
+  late AnimationController _glintController;
+
+  late Animation<double> _logoFade;
+  late Animation<double> _logoScale;
+  late Animation<double> _logoTilt;
+  late Animation<double> _glintPosition;
+
+  final List<Offset> _particles = List.generate(40,
+      (i) => Offset(math.Random().nextDouble(), math.Random().nextDouble()));
 
   @override
   void initState() {
     super.initState();
-    
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 2000),
-      vsync: this,
-    )..repeat();
 
-    _ecgController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    )..repeat();
-
-    _contentController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+    _mainController = AnimationController(
+      duration: const Duration(milliseconds: 2500),
       vsync: this,
     );
 
-    _heartScale = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.15).chain(CurveTween(curve: Curves.easeInOut)), weight: 50),
-      TweenSequenceItem(tween: Tween(begin: 1.15, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 50),
-    ]).animate(_pulseController);
+    _tiltController = AnimationController(
+      duration: const Duration(seconds: 4),
+      vsync: this,
+    )..repeat(reverse: true);
 
-    _contentOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _contentController, curve: Curves.easeIn),
+    _glintController = AnimationController(
+      duration: const Duration(seconds: 3),
+      vsync: this,
+    )..repeat();
+
+    _logoFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+          parent: _mainController,
+          curve: const Interval(0.0, 0.5, curve: Curves.easeIn)),
     );
 
-    _contentController.forward();
+    _logoScale = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(
+          parent: _mainController,
+          curve: const Interval(0.0, 0.6, curve: Curves.easeInOut)),
+    );
+
+    _logoTilt = Tween<double>(begin: -0.15, end: 0.15).animate(
+      CurvedAnimation(parent: _tiltController, curve: Curves.easeInOut),
+    );
+
+    _glintPosition = Tween<double>(begin: -1.5, end: 2.5).animate(
+      CurvedAnimation(parent: _glintController, curve: Curves.easeInOut),
+    );
+
+    _mainController.forward();
     _navigateToNext();
   }
 
@@ -59,7 +77,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     if (!mounted) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     Widget nextScreen;
     if (authProvider.isAuthenticated) {
       nextScreen = const MainNavScreen();
@@ -75,187 +93,222 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
-        transitionDuration: const Duration(milliseconds: 800),
+        transitionDuration: const Duration(milliseconds: 1000),
       ),
     );
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
-    _ecgController.dispose();
-    _contentController.dispose();
+    _mainController.dispose();
+    _tiltController.dispose();
+    _glintController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Background Gradient
+          // 3D Moving Particle Space
           Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.center,
-                  radius: 1.5,
-                  colors: [
-                    const Color(0xFF1A0505).withOpacity(0.5),
-                    const Color(0xFF0A0A0A),
+            child: AnimatedBuilder(
+              animation: _tiltController,
+              builder: (context, child) {
+                return CustomPaint(
+                  painter:
+                      ParticleSpacePainter(_particles, _tiltController.value),
+                );
+              },
+            ),
+          ),
+
+          // Central 3D Content
+          Center(
+            child: FadeTransition(
+              opacity: _logoFade,
+              child: ScaleTransition(
+                scale: _logoScale,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // 3D Tilted Icon with Glint
+                    AnimatedBuilder(
+                      animation: _tiltController,
+                      builder: (context, child) {
+                        return Transform(
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.002) // Perspective
+                            ..rotateY(_logoTilt.value)
+                            ..rotateX(_logoTilt.value * 0.5),
+                          alignment: Alignment.center,
+                          child: Stack(
+                            children: [
+                              // Outer Glow
+                              Container(
+                                width: 180,
+                                height: 180,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppTheme.primaryRed
+                                          .withValues(alpha: 0.2),
+                                      blurRadius: 80,
+                                      spreadRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // The Icon
+                              ClipOval(
+                                child: Container(
+                                  width: 180,
+                                  height: 180,
+                                  child: Image.asset(
+                                    'assets/images/app_icon.png',
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            const Icon(
+                                      Icons.favorite,
+                                      color: AppTheme.primaryRed,
+                                      size: 100,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Animated Glint (The Shine Effect)
+                              Positioned.fill(
+                                child: AnimatedBuilder(
+                                  animation: _glintPosition,
+                                  builder: (context, child) {
+                                    return FractionallySizedBox(
+                                      widthFactor: 2.0,
+                                      child: Transform(
+                                        transform: Matrix4.translationValues(
+                                            _glintPosition.value * 180, 0, 0)
+                                          ..rotateZ(0.5),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                Colors.white
+                                                    .withValues(alpha: 0.0),
+                                                Colors.white
+                                                    .withValues(alpha: 0.3),
+                                                Colors.white
+                                                    .withValues(alpha: 0.0),
+                                              ],
+                                              stops: const [0.35, 0.5, 0.65],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 60),
+
+                    // Futuristic Title
+                    ShaderMask(
+                      shaderCallback: (bounds) => LinearGradient(
+                        colors: [
+                          Colors.white,
+                          Colors.white.withValues(alpha: 0.7)
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ).createShader(bounds),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'PULSE',
+                            style: TextStyle(
+                              fontSize: 40,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 4,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            'TRACK',
+                            style: TextStyle(
+                              fontSize: 40,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 4,
+                              color: AppTheme.primaryRed,
+                              shadows: [
+                                Shadow(
+                                  color: AppTheme.primaryRed
+                                      .withValues(alpha: 0.5),
+                                  blurRadius: 15,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Text(
+                      'THE FUTURE OF WELLNESS',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white.withValues(alpha: 0.4),
+                        letterSpacing: 8,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
           ),
 
-          // Pulsing Rings
-          Center(
-            child: AnimatedBuilder(
-              animation: _pulseController,
-              builder: (context, child) {
-                return CustomPaint(
-                  painter: PulseRingsPainter(_pulseController.value),
-                  size: const Size(300, 300),
-                );
-              },
-            ),
-          ),
-
-          // Main Content
-          FadeTransition(
-            opacity: _contentOpacity,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 60),
-                // Glowing Heart
-                ScaleTransition(
-                  scale: _heartScale,
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
+          // Bottom Progress
+          Positioned(
+            bottom: 80,
+            left: 0,
+            right: 0,
+            child: FadeTransition(
+              opacity: _logoFade,
+              child: Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 2,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryRed.withOpacity(0.3),
-                          blurRadius: 40,
-                          spreadRadius: 10,
-                        ),
-                      ],
+                      color: AppTheme.primaryRed.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Image.asset(
-                      'assets/images/glowing_heart.png',
-                      width: 120,
-                      height: 120,
-                      errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.favorite,
-                        color: AppTheme.primaryRed,
-                        size: 100,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 40),
-                // Title
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Pulse',
-                      style: TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                    Text(
-                      'Track',
-                      style: TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.primaryRed,
-                        letterSpacing: -1,
-                        shadows: [
-                          Shadow(
-                            color: AppTheme.primaryRed.withOpacity(0.5),
-                            blurRadius: 20,
+                    child: AnimatedBuilder(
+                      animation: _mainController,
+                      builder: (context, child) {
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            width: 40 * _mainController.value,
+                            color: AppTheme.primaryRed,
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryRed.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.primaryRed.withOpacity(0.2)),
-                  ),
-                  child: Text(
-                    'AI-POWERED WELLNESS',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryRed.withOpacity(0.8),
-                      letterSpacing: 2,
+                        );
+                      },
                     ),
                   ),
-                ),
-                const Spacer(),
-                // ECG Waveform
-                SizedBox(
-                  height: 100,
-                  width: double.infinity,
-                  child: AnimatedBuilder(
-                    animation: _ecgController,
-                    builder: (context, child) {
-                      return CustomPaint(
-                        painter: ECGWaveformPainter(_ecgController.value),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 40),
-                // Bottom Info
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppTheme.primaryRed.withOpacity(0.5)),
-                        ),
-                        child: const Icon(Icons.shield_outlined, color: AppTheme.primaryRed, size: 18),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Monitor. Understand. Improve.',
-                              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
-                            ),
-                            Text(
-                              'Your heart, our priority.',
-                              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 60),
-              ],
+                ],
+              ),
             ),
           ),
         ],
@@ -264,128 +317,37 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 }
 
-class PulseRingsPainter extends CustomPainter {
+class ParticleSpacePainter extends CustomPainter {
+  final List<Offset> particles;
   final double progress;
-  PulseRingsPainter(this.progress);
+  ParticleSpacePainter(this.particles, this.progress);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final paint = Paint()
-      ..style = PaintingStyle.stroke;
+    final paint = Paint()..style = PaintingStyle.fill;
 
-    // Background subtle glow
-    final radialPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          AppTheme.primaryRed.withOpacity(0.15 * (1 - progress)),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: size.width / 2));
-    canvas.drawCircle(center, size.width / 2, radialPaint);
+    for (int i = 0; i < particles.length; i++) {
+      final p = particles[i];
+      // Parallax effect based on index
+      double speed = 0.05 + (i % 10) * 0.01;
+      double x =
+          (p.dx * size.width + (progress * size.width * speed)) % size.width;
+      double y = p.dy * size.height;
 
-    for (int i = 0; i < 4; i++) {
-      final ringProgress = (progress + (i / 4)) % 1.0;
-      final radius = (size.width / 2) * ringProgress;
-      final opacity = math.pow(1.0 - ringProgress, 2.0).toDouble();
-      
-      paint.strokeWidth = 1.0 + (1.0 - ringProgress) * 2;
-      paint.color = AppTheme.primaryRed.withOpacity(opacity * 0.4);
-      canvas.drawCircle(center, radius, paint);
-      
-      // Outer subtle glow
-      paint.color = AppTheme.primaryRed.withOpacity(opacity * 0.05);
-      paint.strokeWidth = 8.0;
-      canvas.drawCircle(center, radius, paint);
-    }
+      double opacity = 0.1 + (math.sin(progress * math.pi * 2 + i) * 0.1);
+      paint.color = Colors.white.withValues(alpha: opacity);
 
-    // Orbiting Data Dots
-    final dotPaint = Paint()..style = PaintingStyle.fill;
-    for (int i = 0; i < 6; i++) {
-      double angle = (i * math.pi / 3) + (progress * math.pi * 0.5);
-      double dist = 100 + math.sin(progress * math.pi + i) * 15;
-      double dotOpacity = (0.3 + 0.3 * math.sin(progress * math.pi * 2 + i)).clamp(0.0, 1.0);
-      
-      dotPaint.color = AppTheme.primaryRed.withOpacity(dotOpacity);
-      canvas.drawCircle(
-        Offset(center.dx + math.cos(angle) * dist, center.dy + math.sin(angle) * dist),
-        1.5,
-        dotPaint,
-      );
+      // Draw as small stars
+      canvas.drawCircle(Offset(x, y), 0.8, paint);
+
+      // Some glowy ones
+      if (i % 5 == 0) {
+        paint.color = AppTheme.primaryRed.withValues(alpha: opacity * 0.5);
+        canvas.drawCircle(Offset(x, y), 1.5, paint);
+      }
     }
   }
 
   @override
-  bool shouldRepaint(PulseRingsPainter oldDelegate) => true;
+  bool shouldRepaint(ParticleSpacePainter oldDelegate) => true;
 }
-
-class ECGWaveformPainter extends CustomPainter {
-  final double progress;
-  ECGWaveformPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppTheme.primaryRed.withOpacity(0.8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-
-    final path = Path();
-    final width = size.width;
-    final height = size.height;
-    final midY = height / 2;
-
-    path.moveTo(0, midY);
-
-    for (double x = 0; x <= width; x += 2) {
-      double relativeX = (x / width + progress) % 1.0;
-      double y = midY;
-
-      // Create ECG spikes at specific points in the cycle
-      if (relativeX > 0.45 && relativeX < 0.55) {
-        // Main spike (QRS complex)
-        double peakProgress = (relativeX - 0.45) / 0.1;
-        if (peakProgress < 0.2) {
-          y = midY + (peakProgress / 0.2) * 10; // Q
-        } else if (peakProgress < 0.5) {
-          y = midY - ((peakProgress - 0.2) / 0.3) * 40; // R
-        } else if (peakProgress < 0.8) {
-          y = midY + ((peakProgress - 0.5) / 0.3) * 30; // S
-        } else {
-          y = midY - ((peakProgress - 0.8) / 0.2) * 5; // T start
-        }
-      } else if (relativeX > 0.1 && relativeX < 0.2) {
-        // P wave
-        double pProgress = (relativeX - 0.1) / 0.1;
-        y = midY - math.sin(pProgress * math.pi) * 8;
-      } else if (relativeX > 0.7 && relativeX < 0.85) {
-        // T wave
-        double tProgress = (relativeX - 0.7) / 0.15;
-        y = midY - math.sin(tProgress * math.pi) * 12;
-      }
-
-      if (x == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-
-    // Shadow/Glow for the ECG line
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = AppTheme.primaryRed.withOpacity(0.2)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(ECGWaveformPainter oldDelegate) => true;
-}
-

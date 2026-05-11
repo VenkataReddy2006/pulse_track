@@ -11,6 +11,9 @@ class ResultScreen extends StatefulWidget {
   final int? spo2;
   final int? systolic;
   final int? diastolic;
+  final String? aiInsight;
+  final List<String>? aiTips;
+  final List<String>? aiWatchFor;
   final VoidCallback? onDone;
   final bool isHistory;
 
@@ -21,6 +24,9 @@ class ResultScreen extends StatefulWidget {
     this.spo2,
     this.systolic,
     this.diastolic,
+    this.aiInsight,
+    this.aiTips,
+    this.aiWatchFor,
     this.onDone,
     this.isHistory = false,
   });
@@ -89,6 +95,24 @@ class _ResultScreenState extends State<ResultScreen>
   }
 
   Future<void> _loadAdvice() async {
+    // If we already have advice passed in (from history), use it!
+    if (widget.isHistory && widget.bpm > 0) {
+      // Create a result object from what we have
+      if (mounted) {
+        setState(() {
+          _advice = AiAdviceResult(
+            insight: _getPassedInsight(),
+            tips: widget.aiTips ?? [],
+            watchFor: widget.aiWatchFor ?? [],
+            statusLabel: widget.status,
+            fromAi: true,
+          );
+          _isLoading = false;
+        });
+        return;
+      }
+    }
+
     final advice = await AiAdviceService().getAdvice(
       bpm: widget.bpm,
       status: widget.status,
@@ -99,6 +123,13 @@ class _ResultScreenState extends State<ResultScreen>
         _isLoading = false;
       });
     }
+  }
+
+  String _getPassedInsight() {
+    if (widget.aiInsight != null && widget.aiInsight!.isNotEmpty) {
+      return widget.aiInsight!;
+    }
+    return "Your heart rate of ${widget.bpm} BPM is ${widget.status.toLowerCase()}.";
   }
 
   @override
@@ -594,8 +625,8 @@ class _ResultScreenState extends State<ResultScreen>
                 advice.insight,
                 style: GoogleFonts.outfit(
                   color: Colors.white.withValues(alpha: 0.88),
-                  fontSize: 15,
-                  height: 1.65,
+                  fontSize: 13,
+                  height: 1.55,
                 ),
               ),
             ],
@@ -681,8 +712,8 @@ class _ResultScreenState extends State<ResultScreen>
                       item,
                       style: GoogleFonts.outfit(
                         color: Colors.white70,
-                        fontSize: 13.5,
-                        height: 1.5,
+                        fontSize: 12,
+                        height: 1.45,
                       ),
                     ),
                   ),

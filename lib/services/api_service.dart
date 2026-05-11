@@ -237,15 +237,19 @@ class ApiService {
         // Note: Real IDs would be better if server provides them
         final Map<String, BpmRecord> uniqueRecords = {};
         
-        // Add server records first (they are "source of truth")
+        // Use a more stable key: userId + bpm + timestamp (ignoring micro/milliseconds)
+        String generateKey(BpmRecord r) {
+          return '${r.userId}_${r.bpm}_${r.timestamp.year}${r.timestamp.month}${r.timestamp.day}${r.timestamp.hour}${r.timestamp.minute}${r.timestamp.second}';
+        }
+
+        // Add server records first
         for (var r in serverRecords) {
-          final key = '${r.timestamp.toIso8601String()}_${r.bpm}';
-          uniqueRecords[key] = r;
+          uniqueRecords[generateKey(r)] = r;
         }
         
         // Add local records only if they don't exist on server yet
         for (var r in combinedHistory) {
-          final key = '${r.timestamp.toIso8601String()}_${r.bpm}';
+          final key = generateKey(r);
           if (!uniqueRecords.containsKey(key)) {
             uniqueRecords[key] = r;
           }

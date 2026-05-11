@@ -12,6 +12,29 @@ class HealthProvider with ChangeNotifier {
   BpmRecord? get latestRecord => _latestRecord;
   bool get isLoading => _isLoading;
 
+  List<BpmRecord> _deduplicate(List<BpmRecord> records) {
+    final Map<String, BpmRecord> unique = {};
+    for (var r in records) {
+      // Key: userId + BPM + Year + Month + Day + Hour + Minute
+      // This hides duplicates within the same minute with the same BPM
+      final key = '${r.userId}_${r.bpm}_${r.timestamp.year}${r.timestamp.month}${r.timestamp.day}${r.timestamp.hour}${r.timestamp.minute}';
+      if (!unique.containsKey(key)) {
+        unique[key] = r;
+      } else {
+        // If we have a choice, keep the one with more data (Oxygen/BP)
+        final existing = unique[key]!;
+        bool currentHasMoreData = (r.spo2 != null && r.spo2! > 0) || (r.systolic != null && r.systolic! > 0);
+        bool existingHasMoreData = (existing.spo2 != null && existing.spo2! > 0) || (existing.systolic != null && existing.systolic! > 0);
+        if (currentHasMoreData && !existingHasMoreData) {
+          unique[key] = r;
+        }
+      }
+    }
+    final list = unique.values.toList();
+    list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return list;
+  }
+
   Future<void> fetchHistory(String userId) async {
     _isLoading = true;
     notifyListeners();
@@ -20,17 +43,17 @@ class HealthProvider with ChangeNotifier {
       // 1. Load local records immediately
       final localHistory = await _apiService.getLocalHistory(userId);
       if (localHistory.isNotEmpty) {
-        _history = localHistory;
-        _latestRecord = localHistory.first;
+        _history = _deduplicate(localHistory);
+        _latestRecord = _history.first;
         _isLoading = false;
         notifyListeners();
       }
 
       // 2. Fetch from server
       final serverHistory = await _apiService.getHistory(userId);
-      _history = serverHistory;
-      if (serverHistory.isNotEmpty) {
-        _latestRecord = serverHistory.first;
+      _history = _deduplicate(serverHistory);
+      if (_history.isNotEmpty) {
+        _latestRecord = _history.first;
       }
     } catch (e) {
       debugPrint('Error fetching history: $e');
@@ -41,9 +64,10 @@ class HealthProvider with ChangeNotifier {
   }
 
   void addRecord(BpmRecord record) {
-    // Add to top of list
-    _history.insert(0, record);
-    _latestRecord = record;
+    // Add and deduplicate
+    final newList = List<BpmRecord>.from(_history)..insert(0, record);
+    _history = _deduplicate(newList);
+    _latestRecord = _history.first;
     notifyListeners();
   }
 

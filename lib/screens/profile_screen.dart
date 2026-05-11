@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
+import '../providers/health_provider.dart';
+
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
@@ -316,92 +318,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildOverviewCard() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    return FutureBuilder<Map<String, dynamic>>(
-      future: authProvider.getUserStats(),
-      builder: (context, snapshot) {
-        final stats =
-            snapshot.data ??
-            {'avgBpm': 0, 'maxBpm': 0, 'minBpm': 0, 'totalScans': 0};
+    final healthProvider = Provider.of<HealthProvider>(context);
+    final history = healthProvider.history;
+    
+    // Calculate stats locally for perfect consistency with History screen
+    int avgBpm = 0;
+    int maxBpm = 0;
+    int minBpm = 0;
+    int totalScans = history.length;
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF121417),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
+    if (history.isNotEmpty) {
+      avgBpm = (history.fold(0, (sum, item) => sum + item.bpm) / history.length).round();
+      maxBpm = history.map((e) => e.bpm).reduce((a, b) => a > b ? a : b);
+      minBpm = history.map((e) => e.bpm).reduce((a, b) => a < b ? a : b);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121417),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              const Text(
+                'Overview',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Overview',
+                  Text(
+                    'All Time',
                     style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                      color: AppTheme.primaryRed.withValues(alpha: 0.7),
+                      fontSize: 13,
                     ),
                   ),
-                  Row(
-                    children: [
-                      Text(
-                        'All Time',
-                        style: TextStyle(
-                          color: AppTheme.primaryRed.withOpacity(0.7),
-                          fontSize: 13,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.keyboard_arrow_down,
-                        color: AppTheme.primaryRed,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildStatItem(
-                    Icons.favorite,
-                    Colors.red,
-                    '${stats['avgBpm']}',
-                    'BPM',
-                    'Avg. Heart Rate',
-                  ),
-                  _buildStatVerticalDivider(),
-                  _buildStatItem(
-                    Icons.show_chart,
-                    Colors.pink,
-                    '${stats['maxBpm']}',
-                    'BPM',
-                    'Max. Heart Rate',
-                  ),
-                  _buildStatVerticalDivider(),
-                  _buildStatItem(
-                    Icons.favorite_border,
-                    Colors.blue,
-                    '${stats['minBpm']}',
-                    'BPM',
-                    'Min. Heart Rate',
-                  ),
-                  _buildStatVerticalDivider(),
-                  _buildStatItem(
-                    Icons.center_focus_weak,
-                    Colors.green,
-                    '${stats['totalScans']}',
-                    'Times',
-                    'Scans Done',
+                  const Icon(
+                    Icons.keyboard_arrow_down,
+                    color: AppTheme.primaryRed,
+                    size: 18,
                   ),
                 ],
               ),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatItem(
+                Icons.favorite,
+                Colors.red,
+                '$avgBpm',
+                'BPM',
+                'Avg. Heart Rate',
+              ),
+              _buildStatVerticalDivider(),
+              _buildStatItem(
+                Icons.show_chart,
+                Colors.pink,
+                '$maxBpm',
+                'BPM',
+                'Max. Heart Rate',
+              ),
+              _buildStatVerticalDivider(),
+              _buildStatItem(
+                Icons.favorite_border,
+                Colors.blue,
+                '$minBpm',
+                'BPM',
+                'Min. Heart Rate',
+              ),
+              _buildStatVerticalDivider(),
+              _buildStatItem(
+                Icons.center_focus_weak,
+                Colors.green,
+                '$totalScans',
+                'Times',
+                'Scans Done',
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

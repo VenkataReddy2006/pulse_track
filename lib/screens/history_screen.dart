@@ -24,6 +24,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   bool _isLoading = true;
   int _selectedTab = 0; // 0=Day, 1=Week, 2=Month
   String _filterStatus = 'All';
+  DateTime _monthViewDate = DateTime.now();
 
   @override
   void initState() {
@@ -211,7 +212,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ? DateFormat('MMM dd, yyyy').format(DateTime.now())
         : _selectedTab == 1
             ? '${DateFormat('MMM dd').format(DateTime.now().subtract(const Duration(days: 6)))} – ${DateFormat('MMM dd').format(DateTime.now())}'
-            : '${DateFormat('MMM dd').format(DateTime.now().subtract(const Duration(days: 29)))} – ${DateFormat('MMM dd').format(DateTime.now())}';
+            : DateFormat('MMMM yyyy').format(_monthViewDate);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -233,6 +234,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
             const Text('Average', style: TextStyle(color: Colors.grey, fontSize: 12)),
           ]),
         ]),
+        if (_selectedTab == 2) ...[
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, color: Colors.white),
+                onPressed: () => setState(() => _monthViewDate = DateTime(_monthViewDate.year, _monthViewDate.month - 1)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)),
+                child: Text(DateFormat('MMMM yyyy').format(_monthViewDate), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, color: Colors.white),
+                onPressed: _monthViewDate.month == DateTime.now().month && _monthViewDate.year == DateTime.now().year 
+                    ? null 
+                    : () => setState(() => _monthViewDate = DateTime(_monthViewDate.year, _monthViewDate.month + 1)),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 32),
         SizedBox(
           height: 180,
@@ -248,175 +272,117 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     
-    // Sort records by timestamp
     final sorted = List<BpmRecord>.from(records)..sort((a, b) => a.timestamp.compareTo(b.timestamp));
     
     List<FlSpot> spots = [];
     List<String> labels = [];
     double maxX = 0;
     double intervalX = 1;
+    double chartWidth = MediaQuery.of(context).size.width - 72; // Default width
 
     if (_selectedTab == 0) {
-      // --- DAY VIEW: Group by hour/minute ---
+      // --- DAY VIEW: X-axis Time (Every Hour) with Horizontal Scroll ---
       final Map<double, List<int>> hourMap = {};
       for (final r in sorted) {
-        // Only include today's records for safety (already filtered but good to be sure)
-        if (r.timestamp.year == today.year && 
-            r.timestamp.month == today.month && 
-            r.timestamp.day == today.day) {
+        if (r.timestamp.year == today.year && r.timestamp.month == today.month && r.timestamp.day == today.day) {
           double x = r.timestamp.hour + (r.timestamp.minute / 60.0);
-          // Round to nearest 5 mins to avoid too many points/collisions
-          x = (x * 12).round() / 12.0; 
           hourMap.putIfAbsent(x, () => []).add(r.bpm);
         }
       }
-      
       final sortedX = hourMap.keys.toList()..sort();
       for (final x in sortedX) {
-        final avgBpm = hourMap[x]!.reduce((a, b) => a + b) / hourMap[x]!.length;
-        spots.add(FlSpot(x, avgBpm));
+        spots.add(FlSpot(x, hourMap[x]!.reduce((a, b) => a + b) / hourMap[x]!.length));
       }
-      
-      labels = ['12 AM', '6 AM', '12 PM', '6 PM', '12 AM'];
-      maxX = 24;
-      intervalX = 6;
+      // Labels for every hour: 0 to 23
+      labels = List.generate(24, (i) {
+        final hour = i == 0 ? 12 : (i > 12 ? i - 12 : i);
+        final ampm = i >= 12 ? 'PM' : 'AM';
+        return '$hour$ampm';
+      });
+      maxX = 23;
+      intervalX = 1;
+      chartWidth = 1000; // Fixed width for scrolling through 24 hours
     } else if (_selectedTab == 1) {
-      // --- WEEK VIEW: Group by day ---
+      // --- WEEK VIEW: X-axis Days (Mon-Sun) ---
       final Map<int, List<int>> dayMap = {};
       for (final r in sorted) {
-        final recordDate = DateTime(r.timestamp.year, r.timestamp.month, r.timestamp.day);
-        final diffDays = today.difference(recordDate).inDays;
+        final diffDays = today.difference(DateTime(r.timestamp.year, r.timestamp.month, r.timestamp.day)).inDays;
         if (diffDays >= 0 && diffDays < 7) {
           final key = 6 - diffDays;
           dayMap.putIfAbsent(key, () => []).add(r.bpm);
         }
       }
-      
       for (int i = 0; i <= 6; i++) {
         if (dayMap.containsKey(i)) {
-          final avgBpm = dayMap[i]!.reduce((a, b) => a + b) / dayMap[i]!.length;
-          spots.add(FlSpot(i.toDouble(), avgBpm));
+          spots.add(FlSpot(i.toDouble(), dayMap[i]!.reduce((a, b) => a + b) / dayMap[i]!.length));
         }
       }
-      
-      labels = List.generate(7, (i) {
-        final date = today.subtract(Duration(days: 6 - i));
-        return DateFormat('E').format(date);
-      });
+      labels = List.generate(7, (i) => DateFormat('E').format(today.subtract(Duration(days: 6 - i))));
       maxX = 6;
       intervalX = 1;
     } else {
-      // --- MONTH VIEW: Group by week (last 4 weeks) ---
-      final Map<int, List<int>> weekMap = {};
+      // --- MONTH VIEW: X-axis Calendar Dates (1 to End of Month) ---
+      final Map<int, List<int>> monthDayMap = {};
+      final daysInMonth = DateTime(_monthViewDate.year, _monthViewDate.month + 1, 0).day;
+      
       for (final r in sorted) {
-        final diffDays = today.difference(r.timestamp).inDays;
-        if (diffDays >= 0 && diffDays < 28) {
-          final key = 3 - (diffDays ~/ 7);
-          weekMap.putIfAbsent(key, () => []).add(r.bpm);
+        if (r.timestamp.year == _monthViewDate.year && r.timestamp.month == _monthViewDate.month) {
+          final key = r.timestamp.day - 1;
+          monthDayMap.putIfAbsent(key, () => []).add(r.bpm);
         }
       }
-      
-      for (int i = 0; i <= 3; i++) {
-        if (weekMap.containsKey(i)) {
-          final avgBpm = weekMap[i]!.reduce((a, b) => a + b) / weekMap[i]!.length;
-          spots.add(FlSpot(i.toDouble(), avgBpm));
+      for (int i = 0; i < daysInMonth; i++) {
+        if (monthDayMap.containsKey(i)) {
+          spots.add(FlSpot(i.toDouble(), monthDayMap[i]!.reduce((a, b) => a + b) / monthDayMap[i]!.length));
         }
       }
-      
-      labels = ['W1', 'W2', 'W3', 'W4'];
-      maxX = 3;
+      labels = List.generate(daysInMonth, (i) => '${i + 1}');
+      maxX = (daysInMonth - 1).toDouble();
       intervalX = 1;
+      chartWidth = (daysInMonth * 40.0).clamp(MediaQuery.of(context).size.width, 1400); 
     }
 
     if (spots.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.bar_chart, color: Colors.grey.withOpacity(0.3), size: 40),
-            const SizedBox(height: 8),
-            const Text('No data points yet', style: TextStyle(color: Colors.grey, fontSize: 12)),
-          ],
-        ),
-      );
+      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.bar_chart, color: Colors.grey.withValues(alpha: 0.3), size: 40),
+        const SizedBox(height: 8),
+        Text('No records found for $_tabLabel', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+      ]));
     }
 
-    // Special case for single point: add padding points to make it visible as a line
-    if (spots.length == 1) {
-      final s = spots[0];
-      spots = [
-        FlSpot(s.x > 0 ? s.x - (maxX * 0.05) : 0, s.y),
-        s,
-        FlSpot(s.x < maxX ? s.x + (maxX * 0.05) : maxX, s.y),
-      ];
-    }
-
-    final double minYVal = spots.map((s) => s.y).reduce(min);
-    final double maxYVal = spots.map((s) => s.y).reduce(max);
-    
-    // Ensure some padding in Y axis
-    final double minY = (minYVal - 15).clamp(0.0, 300.0);
-    final double maxY = (maxYVal + 15).clamp(maxYVal + 5, 300.0);
-
-    return LineChart(LineChartData(
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: false,
-        horizontalInterval: 20,
-        getDrawingHorizontalLine: (v) => FlLine(
-          color: Colors.white.withOpacity(0.05),
-          strokeWidth: 1,
+    // Wrap in scroll view if month view
+    Widget chart = SizedBox(
+      width: chartWidth,
+      child: LineChart(LineChartData(
+        gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 10, getDrawingHorizontalLine: (v) => FlLine(color: Colors.white.withValues(alpha: 0.05), strokeWidth: 1)),
+        titlesData: FlTitlesData(
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, interval: 10, reservedSize: 35, getTitlesWidget: (v, m) => Padding(padding: const EdgeInsets.only(right: 8), child: Text('${v.toInt()}', style: const TextStyle(color: Colors.grey, fontSize: 10))))),
+          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, interval: intervalX, getTitlesWidget: (v, m) {
+            int idx = v.round();
+            if (idx < 0 || idx >= labels.length) return const SizedBox.shrink();
+            return SideTitleWidget(meta: m, child: Text(labels[idx], style: const TextStyle(color: Colors.grey, fontSize: 9)));
+          })),
         ),
-      ),
-      titlesData: FlTitlesData(
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            interval: 20,
-            reservedSize: 35,
-            getTitlesWidget: (v, m) => Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Text(
-                '${v.toInt()}',
-                style: const TextStyle(color: Colors.grey, fontSize: 10),
-              ),
-            ),
-          ),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            interval: _selectedTab == 0 ? 6 : 1,
-            getTitlesWidget: (v, m) {
-              int idx = (_selectedTab == 0 ? (v / 6).round() : v.round());
-              if (idx < 0 || idx >= labels.length) return const SizedBox.shrink();
-              return SideTitleWidget(
-                meta: m,
-                child: Text(labels[idx], style: const TextStyle(color: Colors.grey, fontSize: 10)),
-              );
-            },
-          ),
-        ),
-      ),
-      borderData: FlBorderData(show: false),
-      minX: 0, maxX: maxX, minY: minY, maxY: maxY,
-      lineBarsData: [LineChartBarData(
-        spots: spots, isCurved: true, color: AppTheme.primaryRed, barWidth: 3, isStrokeCapRound: true,
-        dotData: FlDotData(show: true, checkToShowDot: (s, _) => s.y == maxYVal || s.y == minYVal,
-          getDotPainter: (s, p, b, i) => FlDotCirclePainter(radius: 4, color: AppTheme.backgroundColor, strokeWidth: 2, strokeColor: AppTheme.primaryRed)),
-        belowBarData: BarAreaData(show: true, gradient: LinearGradient(
-          colors: [AppTheme.primaryRed.withValues(alpha: 0.3), AppTheme.primaryRed.withValues(alpha: 0.0)],
-          begin: Alignment.topCenter, end: Alignment.bottomCenter)),
-      )],
+        borderData: FlBorderData(show: false),
+        minX: 0, maxX: maxX, 
+        minY: (spots.map((s) => s.y).reduce(min) - 20).clamp(0, 300), 
+        maxY: (spots.map((s) => s.y).reduce(max) + 20).clamp(0, 300),
+        lineBarsData: [LineChartBarData(
+          spots: spots, isCurved: false, color: AppTheme.primaryRed, barWidth: 3, isStrokeCapRound: true,
+          dotData: FlDotData(show: _selectedTab != 2, getDotPainter: (s, p, b, i) => FlDotCirclePainter(radius: 3, color: AppTheme.backgroundColor, strokeWidth: 1.5, strokeColor: AppTheme.primaryRed)),
+          belowBarData: BarAreaData(show: true, gradient: LinearGradient(colors: [AppTheme.primaryRed.withValues(alpha: 0.2), AppTheme.primaryRed.withValues(alpha: 0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)),
+        )],
+        lineTouchData: LineTouchData(touchTooltipData: LineTouchTooltipData(getTooltipColor: (_) => const Color(0xFF1E2430), getTooltipItems: (s) => s.map((it) => LineTooltipItem('${it.y.toInt()} BPM', const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))).toList())),
+      )),
+    );
 
-      lineTouchData: LineTouchData(
-        touchTooltipData: LineTouchTooltipData(
-          getTooltipColor: (_) => const Color(0xFF1E2430), tooltipRoundedRadius: 8,
-          getTooltipItems: (spots) => spots.map((s) => LineTooltipItem('${s.y.toInt()} BPM', const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))).toList())),
-    ));
+    return (_selectedTab == 0 || _selectedTab == 2) 
+        ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: chart) 
+        : chart;
   }
+
 
   // ── Stats Row ─────────────────────────────────────────────────────────────────
   Widget _buildStatsRow() {
@@ -521,6 +487,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
               spo2: r.spo2,
               systolic: r.systolic,
               diastolic: r.diastolic,
+              aiInsight: r.aiInsight,
+              aiTips: r.aiTips,
+              aiWatchFor: r.aiWatchFor,
               isHistory: true,
             ),
             transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
@@ -550,11 +519,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         const SizedBox(width: 2),
                         Text('${r.spo2}%', style: const TextStyle(color: Colors.cyanAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                       ],
-                      if (r.systolic != null) ...[
+                      if (r.systolic != null || r.diastolic != null) ...[
                         const SizedBox(width: 8),
                         Icon(Icons.favorite_outline, color: Colors.redAccent.withValues(alpha: 0.6), size: 10),
                         const SizedBox(width: 2),
-                        Text('${r.systolic}/${r.diastolic}', style: const TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                        Text('${r.systolic ?? 120}/${r.diastolic ?? 80}', style: const TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                       ],
                     ],
                   ),
