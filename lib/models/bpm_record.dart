@@ -9,11 +9,18 @@ class BpmRecord {
   final int? systolic;
   final int? diastolic;
   final DateTime timestamp;
-  
+
   // AI Advice Fields
   final String? aiInsight;
   final List<String>? aiTips;
   final List<String>? aiWatchFor;
+
+  // ── NEW: Scientific rPPG fields ──
+  final double? hrv;            // RMSSD in milliseconds
+  final double? sdnn;           // Standard Deviation of NN intervals
+  final String? stressLevel;    // "Relaxed", "Mild Stress", "High Stress"
+  final double? confidenceScore; // Signal quality 0.0–1.0
+  final bool isEstimated;       // True for non-medical estimates
 
   BpmRecord({
     this.id,
@@ -27,6 +34,11 @@ class BpmRecord {
     this.aiInsight,
     this.aiTips,
     this.aiWatchFor,
+    this.hrv,
+    this.sdnn,
+    this.stressLevel,
+    this.confidenceScore,
+    this.isEstimated = false,
   });
 
   factory BpmRecord.fromJson(Map<String, dynamic> json) {
@@ -63,19 +75,19 @@ class BpmRecord {
     }
 
     // Comprehensive Field Mapping
-    int? sys = packedSys ?? 
-               (json['systolic'] as int? ?? 
-                json['systolicBP'] as int? ?? 
+    int? sys = packedSys ??
+               (json['systolic'] as int? ??
+                json['systolicBP'] as int? ??
                 int.tryParse(json['systolic']?.toString() ?? json['systolicBP']?.toString() ?? ''));
-                
-    int? dia = packedDia ?? 
-               (json['diastolic'] as int? ?? 
-                json['diastolicBP'] as int? ?? 
+
+    int? dia = packedDia ??
+               (json['diastolic'] as int? ??
+                json['diastolicBP'] as int? ??
                 int.tryParse(json['diastolic']?.toString() ?? json['diastolicBP']?.toString() ?? ''));
 
-    int? ox = packedSpo2 ?? 
-              (json['spo2'] as int? ?? 
-               json['oxygenLevel'] as int? ?? 
+    int? ox = packedSpo2 ??
+              (json['spo2'] as int? ??
+               json['oxygenLevel'] as int? ??
                int.tryParse(json['spo2']?.toString() ?? json['oxygenLevel']?.toString() ?? ''));
 
     return BpmRecord(
@@ -86,12 +98,17 @@ class BpmRecord {
       spo2: ox,
       systolic: sys,
       diastolic: dia,
-      timestamp: json['timestamp'] != null 
-          ? DateTime.parse(json['timestamp']).toLocal() 
+      timestamp: json['timestamp'] != null
+          ? DateTime.parse(json['timestamp']).toLocal()
           : DateTime.now(),
       aiInsight: insight,
       aiTips: tips,
       aiWatchFor: watchFor,
+      hrv: (json['hrv'] as num?)?.toDouble(),
+      sdnn: (json['sdnn'] as num?)?.toDouble(),
+      stressLevel: json['stressLevel']?.toString(),
+      confidenceScore: (json['confidenceScore'] as num?)?.toDouble(),
+      isEstimated: json['isEstimated'] == true,
     );
   }
 
@@ -113,6 +130,11 @@ class BpmRecord {
       'aiInsight': aiInsight,
       'aiTips': aiTips,
       'aiWatchFor': aiWatchFor,
+      'hrv': hrv,
+      'sdnn': sdnn,
+      'stressLevel': stressLevel,
+      'confidenceScore': confidenceScore,
+      'isEstimated': isEstimated,
       'timestamp': timestamp.toIso8601String(),
     };
   }

@@ -45,3 +45,6 @@ app.*.map.json
 /android/app/release
 backend/.gitignore
 .env
+*.env
+python_backend/__pycache__/
+python_backend/*.pyc

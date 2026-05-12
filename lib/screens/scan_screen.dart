@@ -4,12 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'dart:async';
-import 'dart:math';
+import 'dart:math' show sqrt;
 import '../theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/health_provider.dart';
-import '../services/api_service.dart';
 import '../models/bpm_record.dart';
 import 'result_screen.dart';
 import '../services/rppg_service.dart';
@@ -360,46 +359,64 @@ class _ScanScreenState extends State<ScanScreen> {
       _scanProgress = 1.0;
     });
 
-    // --- USE REAL CALCULATED VITALS ---
+    // ── Analyze signals via Python backend (or on-device fallback) ──
     final rppg = RppgService();
-    int calculatedBpm = rppg.calculateBpm();
-    int calculatedSpo2 = rppg.calculateSpo2();
+    final rppgResult = await rppg.analyzeSignals();
 
-    if (calculatedBpm == 0) {
-      calculatedBpm = 65 + Random().nextInt(20);
-      calculatedSpo2 = 97 + Random().nextInt(3);
+    if (!rppgResult.success || rppgResult.bpm == 0) {
+      // Signal was insufficient — show error, do NOT generate fake values
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _isFinished = false;
+          _hasTriggeredStop = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(rppgResult.message.isNotEmpty
+                ? rppgResult.message
+                : 'Could not detect pulse. Please try again with better lighting.'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
     }
 
-    final bp = rppg.calculateBp(calculatedBpm);
+    final calculatedBpm = rppgResult.bpm;
+    final calculatedSpo2 = rppgResult.spo2;
 
     final user = Provider.of<AuthProvider>(context, listen: false).user;
     try {
       if (user != null) {
         String status = 'Normal';
-        if (calculatedBpm < 50) status = 'Low';
+        if (calculatedBpm < 60) status = 'Low';
         if (calculatedBpm > 100) status = 'High';
 
-        debugPrint('GENERATING AI ADVICE...');
         final advice = await AiAdviceService().getAdvice(
           bpm: calculatedBpm,
           status: status,
         );
 
-        debugPrint('PREPARING TO SAVE RECORD WITH AI ADVICE...');
         final record = BpmRecord(
           userId: user.id,
           bpm: calculatedBpm,
           status: status,
-          spo2: calculatedSpo2,
-          systolic: bp['systolic'],
-          diastolic: bp['diastolic'],
+          spo2: calculatedSpo2 > 0 ? calculatedSpo2 : null,
+          systolic: rppgResult.systolic > 0 ? rppgResult.systolic : null,
+          diastolic: rppgResult.diastolic > 0 ? rppgResult.diastolic : null,
           timestamp: DateTime.now(),
           aiInsight: advice.insight,
           aiTips: advice.tips,
           aiWatchFor: advice.watchFor,
+          hrv: rppgResult.hrv,
+          sdnn: rppgResult.sdnn,
+          stressLevel: rppgResult.stressLevel,
+          confidenceScore: rppgResult.confidence,
+          isEstimated: true,
         );
 
-        debugPrint('CALLING saveNewRecord via HealthProvider...');
         await context.read<HealthProvider>().saveNewRecord(record);
 
         if (mounted) {
@@ -411,19 +428,19 @@ class _ScanScreenState extends State<ScanScreen> {
 
           setState(() => _isSaving = false);
 
-          // Navigate to the full Result + AI screen
           await Navigator.of(context).push(
             PageRouteBuilder(
               pageBuilder: (_, __, ___) => ResultScreen(
                 bpm: calculatedBpm,
                 status: status,
-                spo2: calculatedSpo2,
-                systolic: bp['systolic'],
-                diastolic: bp['diastolic'],
+                spo2: calculatedSpo2 > 0 ? calculatedSpo2 : null,
+                systolic: rppgResult.systolic > 0 ? rppgResult.systolic : null,
+                diastolic: rppgResult.diastolic > 0 ? rppgResult.diastolic : null,
                 onDone: () {
-                  Navigator.of(context).pop(); // pop ResultScreen
-                  if (widget.onScanComplete != null)
+                  Navigator.of(context).pop();
+                  if (widget.onScanComplete != null) {
                     widget.onScanComplete!(record);
+                  }
                 },
               ),
               transitionsBuilder: (_, animation, __, child) =>
@@ -433,8 +450,6 @@ class _ScanScreenState extends State<ScanScreen> {
           );
           return;
         }
-      } else {
-        debugPrint('CANNOT SAVE: USER OBJECT IS NULL');
       }
     } catch (e) {
       debugPrint('Error in _stopScan: $e');

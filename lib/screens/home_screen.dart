@@ -8,7 +8,7 @@ import '../services/api_service.dart';
 import '../models/bpm_record.dart';
 import '../theme/app_theme.dart';
 import 'scan_screen.dart';
-import 'dart:math' show Random;
+
 import 'breathing_screen.dart';
 import 'sleep_screen.dart';
 import 'ai_chat_screen.dart';
@@ -735,25 +735,28 @@ class _HomeScreenState extends State<HomeScreen>
     int bpm = latestRecord?.bpm ?? 0;
     if (bpm == 0) return const SizedBox.shrink();
 
-    // Mock HRV derived from BPM
-    int hrv = 120 - bpm + Random().nextInt(10);
-    if (hrv < 20) hrv = 20;
+    // Use real HRV from the scan record (no fake Random values)
+    double hrvValue = latestRecord?.hrv ?? 0;
+    String hrvDisplay = hrvValue > 0 ? '${hrvValue.round()}' : '--';
 
-    // Stress Level
-    String stress = '🟢 Relaxed';
-    Color stressColor = Colors.greenAccent;
-    if (hrv < 40) {
-      stress = '🔴 High Stress';
-      stressColor = Colors.redAccent;
-    } else if (hrv < 60) {
+    // Use real stress level from the scan record
+    String stress = latestRecord?.stressLevel ?? 'Unknown';
+    Color stressColor = Colors.grey;
+    if (stress == 'Relaxed') {
+      stress = '🟢 Relaxed';
+      stressColor = Colors.greenAccent;
+    } else if (stress == 'Mild Stress') {
       stress = '🟡 Mild Stress';
       stressColor = Colors.orangeAccent;
+    } else if (stress == 'High Stress') {
+      stress = '🔴 High Stress';
+      stressColor = Colors.redAccent;
     }
 
-    // Health Score
-    int score = 100 - (70 - bpm).abs() - (hrv < 40 ? 10 : 0);
-    if (score > 100) score = 100;
-    if (score < 40) score = 40;
+    // Confidence-based health score
+    double confidence = latestRecord?.confidenceScore ?? 0.5;
+    int score = 100 - (70 - bpm).abs() - (hrvValue < 40 && hrvValue > 0 ? 10 : 0);
+    score = (score * confidence).round().clamp(40, 100);
 
     // AI Suggestion
     final user = Provider.of<AuthProvider>(context, listen: false).user;
@@ -838,7 +841,7 @@ class _HomeScreenState extends State<HomeScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildInsightColumn('HRV (ms)', '$hrv', color: Colors.white),
+              _buildInsightColumn('HRV (ms)', hrvDisplay, color: Colors.white),
               _buildInsightColumn('Stress Level', stress, color: stressColor),
               _buildInsightColumn('Trend', trend, color: trendColor),
             ],

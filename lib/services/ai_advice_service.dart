@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AiAdviceResult {
   final String insight;
@@ -19,9 +20,8 @@ class AiAdviceResult {
 }
 
 class AiAdviceService {
-  // ✅ Get your free API key from https://aistudio.google.com/
-  // Current key is provided by the user.
-  static const String _apiKey = 'AIzaSyDoW9vMoyZE1OvLiZ7JVOVjfnqwsfjEPfU';
+  // API key loaded securely from .env file — NEVER hardcode secrets
+  static String get _apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
 
   // Model priority list — tries each in order if the previous fails/is rate-limited
   static const List<String> _modelFallbacks = [

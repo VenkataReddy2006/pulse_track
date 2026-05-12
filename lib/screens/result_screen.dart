@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -55,16 +54,15 @@ class _ResultScreenState extends State<ResultScreen>
     super.initState();
 
     if (widget.isHistory) {
-      // If it's history, we show exactly what's passed (even if 0 or null)
+      // History: show exactly what's passed
       _spo2 = widget.spo2;
       _sysBp = widget.systolic;
       _diaBp = widget.diastolic;
     } else {
-      // If it's a fresh scan result, we use passed values OR fallback to 
-      // a reasonable single generation if they are somehow missing
-      _spo2 = (widget.spo2 != null && widget.spo2! > 0) ? widget.spo2! : (96 + Random().nextInt(4));
-      _sysBp = (widget.systolic != null && widget.systolic! > 0) ? widget.systolic! : (115 + Random().nextInt(15));
-      _diaBp = (widget.diastolic != null && widget.diastolic! > 0) ? widget.diastolic! : (75 + Random().nextInt(10));
+      // Fresh scan: use passed values, show null/0 as-is (no fake generation)
+      _spo2 = (widget.spo2 != null && widget.spo2! > 0) ? widget.spo2! : null;
+      _sysBp = (widget.systolic != null && widget.systolic! > 0) ? widget.systolic! : null;
+      _diaBp = (widget.diastolic != null && widget.diastolic! > 0) ? widget.diastolic! : null;
     }
 
     _heartController = AnimationController(
@@ -386,11 +384,11 @@ class _ResultScreenState extends State<ResultScreen>
   Widget _buildVitalsRow() {
     return Row(
       children: [
-        Expanded(
+      Expanded(
           child: _buildVitalCard(
-            title: 'Oxygen',
+            title: 'Estimated SpO2',
             value: _spo2 == null || _spo2 == 0 ? '--' : '$_spo2',
-            unit: '%',
+            unit: '% (non-medical)',
             icon: Icons.air_rounded,
             color: const Color(0xFF00E5FF),
           ),
@@ -398,9 +396,9 @@ class _ResultScreenState extends State<ResultScreen>
         const SizedBox(width: 16),
         Expanded(
           child: _buildVitalCard(
-            title: 'Blood Pressure',
+            title: 'Estimated BP',
             value: _sysBp == null || _sysBp == 0 ? '--/--' : '$_sysBp/$_diaBp',
-            unit: 'mmHg',
+            unit: 'mmHg (non-medical)',
             icon: Icons.favorite_border_rounded,
             color: const Color(0xFFFF5252),
           ),
@@ -837,7 +835,7 @@ class _PulseRingPainter extends CustomPainter {
     for (int i = 0; i < 3; i++) {
       final t = (progress + i / 3) % 1.0;
       final radius = (size.width / 2) * t;
-      final opacity = pow(1.0 - t, 2).toDouble() * 0.35;
+      final opacity = (1.0 - t) * (1.0 - t) * 0.35;
       paint
         ..color = color.withValues(alpha: opacity)
         ..strokeWidth = 2.0;
